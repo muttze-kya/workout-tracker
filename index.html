@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Claude 운동" />
+<meta name="theme-color" content="#000000" />
+<title>Claude 운동</title>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  html, body { margin: 0; padding: 0; background: #000000; -webkit-tap-highlight-color: transparent; }
+  * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, 'Malgun Gothic', sans-serif; }
+  input, textarea { -webkit-appearance: none; appearance: none; outline: none; }
+  button { -webkit-appearance: none; appearance: none; border: none; cursor: pointer; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" data-presets="react">
+const { useState, useEffect } = React;
+
+const STORAGE_KEY = "workout-tracker-state";
+
+const PRESETS = [
+  { name: "트레드밀", type: "cardio" },
+  { name: "사이클", type: "cardio" },
+  { name: "랫풀다운", type: "strength" },
+  { name: "체스트프레스", type: "strength" },
+  { name: "스쿼트", type: "strength" },
+  { name: "데드리프트", type: "strength" },
+  { name: "벤치프레스", type: "strength" },
+  { name: "숄더프레스", type: "strength" },
+];
+
+function uid() { return Math.random().toString(36).slice(2, 9); }
+
+function autoResizeTextarea(el) {
+  if (!el) return;
+  el.style.height = "auto";
+  el.style.height = el.scrollHeight + "px";
+}
+
+const palette = {
+  bg: "#000000", card: "#111113", cardBorder: "#28282c",
+  text: "#ffffff", muted: "#8e8e93",
+  water: "#2f80ff", strength: "#2f80ff",
+  danger: "#ff5b5b", accentSoft: "#1c1c1f",
+};
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return { exercises: [] };
+    const parsed = JSON.parse(raw);
+    return { exercises: parsed.exercises || [] };
+  } catch (e) { return { exercises: [] }; }
+}
+function saveState(exercises) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ exercises })); } catch (e) {}
+}
+
+function App() {
+  const [exercises, setExercises] = useState([]);
+  const [showAdd, setShowAdd] = useState(false);
+  const [customName, setCustomName] = useState("");
+  const [customType, setCustomType] = useState("strength");
+  const [showManage, setShowManage] = useState(false);
+  const [confirmReset, setConfirmReset] = useState(false);
+  const [manageStatus, setManageStatus] = useState("");
+  const [saveState_, setSaveState_] = useState("idle");
+
+  useEffect(() => {
+    setExercises(loadState().exercises);
+  }, []);
+
+  useEffect(() => {
+    saveState(exercises);
+    setSaveState_("saved");
+    const t = setTimeout(() => setSaveState_("idle"), 1200);
+    return () => clearTimeout(t);
+  }, [exercises]);
+
+  useEffect(() => {
+    function flush() { saveState(exercises); }
+    document.addEventListener("visibilitychange", flush);
+    window.addEventListener("pagehide", flush);
+    window.addEventListener("blur", flush);
+    return () => {
+      document.removeEventListener("visibilitychange", flush);
+      window.removeEventListener("pagehide", flush);
+      window.removeEventListener("blur", flush);
+    };
+  }, [exercises]);
+
+  function addExercise(name, type) {
+    if (!name.trim()) return;
+    const newEx = {
+      id: uid(), name: name.trim(), type, note: "",
+      sets: [type === "cardio" ? { speed: "", incline: "", time: "" } : { weight: "", reps: "" }],
+    };
+    setExercises((list) => [...list, newEx]);
+    setShowAdd(false);
+    setCustomName("");
+  }
+  function removeExercise(id) { setExercises((list) => list.filter((ex) => ex.id !== id)); }
+  function updateNote(exId, value) {
+    setExercises((list) => list.map((ex) => (ex.id === exId ? { ...ex, note: value } : ex)));
+  }
+  function addSet(exId) {
+    setExercises((list) => list.map((ex) => {
+      if (ex.id !== exId) return ex;
+      const blank = ex.type === "cardio" ? { speed: "", incline: "", time: "" } : { weight: "", reps: "" };
+      return { ...ex, sets: [...ex.sets, blank] };
+    }));
+  }
+  function removeSet(exId, idx) {
+    setExercises((list) => list.map((ex) => ex.id !== exId ? ex : { ...ex, sets: ex.sets.filter((_, i) => i !== idx) }));
+  }
+  function updateSet(exId, idx, field, value) {
+    setExercises((list) => list.map((ex) => {
+      if (ex.id !== exId) return ex;
+      return { ...ex, sets: ex.sets.map((s, i) => (i === idx ? { ...s, [field]: value } : s)) };
+    }));
+  }
+
+  function exportSnapshot() {
+    setManageStatus("내보내는 중...");
+    try {
+      const rows = [["운동", "유형", "세트", "무게(kg)/속도", "횟수/기울기", "시간(분)", "메모"]];
+      exercises.forEach((ex) => {
+        (ex.sets || []).forEach((s, i) => {
+          if (ex.type === "cardio") rows.push([ex.name, "유산소", i + 1, s.speed, s.incline, s.time, ex.note || ""]);
+          else rows.push([ex.name, "근력", i + 1, s.weight, s.reps, "", ex.note || ""]);
+        });
+      });
+      const csv = rows.map((r) => r.map((v) => `"${String(v ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
+      const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      const now = new Date();
+      const stamp = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,"0")}${String(now.getDate()).padStart(2,"0")}`;
+      a.href = url; a.download = `workout-snapshot-${stamp}.csv`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setManageStatus("내보내기 완료");
+    } catch (e) { setManageStatus("내보내기 실패"); }
+    setTimeout(() => setManageStatus(""), 3000);
+  }
+
+  function resetAll() {
+    setExercises([]);
+    setConfirmReset(false);
+    setManageStatus("초기화 완료");
+    setTimeout(() => setManageStatus(""), 3000);
+  }
+
+  return (
+    <div style={{ background: palette.bg, minHeight: "100vh", color: palette.text, paddingBottom: 60 }}>
+      <div style={{ maxWidth: 420, margin: "0 auto", padding: "24px 16px 0" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+          <div style={{ fontSize: 18, fontWeight: 600 }}>운동 기록</div>
+          <button onClick={() => setShowManage((v) => !v)} style={{ background: "none", color: palette.muted, fontSize: 13 }}>⚙ 관리</button>
+        </div>
+
+        {showManage && (
+          <div style={{ background: palette.card, border: `1px solid ${palette.cardBorder}`, borderRadius: 16, padding: 20, marginBottom: 16 }}>
+            <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 12 }}>데이터 관리</div>
+            <button onClick={exportSnapshot} style={{ width: "100%", background: palette.water, color: "#fff", borderRadius: 12, padding: "12px 0", fontSize: 14, fontWeight: 600, marginBottom: 12 }}>⬇ 현재 기록 CSV로 내보내기</button>
+            {!confirmReset ? (
+              <button onClick={() => setConfirmReset(true)} style={{ width: "100%", background: palette.accentSoft, color: palette.danger, borderRadius: 12, padding: "12px 0", fontSize: 14, fontWeight: 600 }}>🗑 전체 초기화</button>
+            ) : (
+              <div style={{ background: palette.accentSoft, borderRadius: 12, padding: 12 }}>
+                <div style={{ fontSize: 12, color: palette.danger, marginBottom: 12 }}>⚠ 모든 운동 기록이 지워져요. 되돌릴 수 없어요.</div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button onClick={() => setConfirmReset(false)} style={{ flex: 1, background: palette.card, color: palette.muted, borderRadius: 8, padding: "10px 0", fontSize: 14 }}>취소</button>
+                  <button onClick={resetAll} style={{ flex: 1, background: palette.danger, color: "#1a0505", borderRadius: 8, padding: "10px 0", fontSize: 14, fontWeight: 600 }}>정말 초기화</button>
+                </div>
+              </div>
+            )}
+            {manageStatus && <div style={{ fontSize: 12, textAlign: "center", marginTop: 12, color: palette.muted }}>{manageStatus}</div>}
+          </div>
+        )}
+
+        {exercises.map((ex) => (
+          <div key={ex.id} style={{ background: palette.card, border: `1px solid ${palette.cardBorder}`, borderRadius: 16, padding: 20, marginBottom: 16 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ color: palette.strength }}>🏋</span>
+                <span style={{ fontWeight: 600, fontSize: 16 }}>{ex.name}</span>
+              </div>
+              <button onClick={() => removeExercise(ex.id)} style={{ background: "none", color: palette.danger, fontSize: 12 }}>🗑 삭제</button>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: ex.type === "cardio" ? "28px 1fr 1fr 1fr 28px" : "28px 1fr 1fr 28px", gap: 8, fontSize: 12, color: palette.muted, marginBottom: 8 }}>
+              <span>세트</span>
+              {ex.type === "cardio" ? (<><span>속도</span><span>기울기</span><span>시간(분)</span></>) : (<><span>무게(kg)</span><span>횟수</span></>)}
+              <span></span>
+            </div>
+
+            {ex.sets.map((s, i) => (
+              <div key={i} style={{ display: "grid", gridTemplateColumns: ex.type === "cardio" ? "28px 1fr 1fr 1fr 28px" : "28px 1fr 1fr 28px", gap: 8, alignItems: "center", marginBottom: 8 }}>
+                <span style={{ fontSize: 14, textAlign: "center", color: palette.muted }}>{i + 1}</span>
+                {ex.type === "cardio" ? (
+                  <>
+                    <input inputMode="decimal" value={s.speed} onChange={(e) => updateSet(ex.id, i, "speed", e.target.value)} style={{ width: "100%", background: palette.accentSoft, color: palette.text, border: "none", borderRadius: 8, padding: "8px 0", textAlign: "center", fontSize: 14 }} />
+                    <input inputMode="decimal" value={s.incline} onChange={(e) => updateSet(ex.id, i, "incline", e.target.value)} style={{ width: "100%", background: palette.accentSoft, color: palette.text, border: "none", borderRadius: 8, padding: "8px 0", textAlign: "center", fontSize: 14 }} />
+                    <input inputMode="decimal" value={s.time} onChange={(e) => updateSet(ex.id, i, "time", e.target.value)} style={{ width: "100%", background: palette.accentSoft, color: palette.text, border: "none", borderRadius: 8, padding: "8px 0", textAlign: "center", fontSize: 14 }} />
+                  </>
+                ) : (
+                  <>
+                    <input inputMode="decimal" value={s.weight} onChange={(e) => updateSet(ex.id, i, "weight", e.target.value)} style={{ width: "100%", background: palette.accentSoft, color: palette.text, border: "none", borderRadius: 8, padding: "8px 0", textAlign: "center", fontSize: 14 }} />
+                    <input inputMode="numeric" value={s.reps} onChange={(e) => updateSet(ex.id, i, "reps", e.target.value)} style={{ width: "100%", background: palette.accentSoft, color: palette.text, border: "none", borderRadius: 8, padding: "8px 0", textAlign: "center", fontSize: 14 }} />
+                  </>
+                )}
+                <button onClick={() => removeSet(ex.id, i)} style={{ background: "none", color: palette.muted, fontSize: 16 }}>✕</button>
+              </div>
+            ))}
+
+            <button onClick={() => addSet(ex.id)} style={{ width: "100%", marginTop: 8, marginBottom: 12, background: "none", border: `1px dashed ${palette.cardBorder}`, color: palette.muted, borderRadius: 12, padding: "10px 0", fontSize: 14 }}>+ 세트 추가</button>
+
+            <textarea
+              value={ex.note}
+              onChange={(e) => { updateNote(ex.id, e.target.value); autoResizeTextarea(e.target); }}
+              placeholder="메모 (컨디션, 특이사항 등)"
+              rows={2}
+              ref={autoResizeTextarea}
+              style={{ width: "100%", background: palette.accentSoft, color: palette.text, border: "none", borderRadius: 8, padding: "8px 12px", fontSize: 14, resize: "none", overflow: "hidden", lineHeight: 1.4 }}
+            />
+          </div>
+        ))}
+
+        {showAdd ? (
+          <div style={{ background: palette.card, border: `1px solid ${palette.cardBorder}`, borderRadius: 16, padding: 20, marginBottom: 16 }}>
+            <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 12 }}>운동 추가</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
+              {PRESETS.map((p) => (
+                <button key={p.name} onClick={() => addExercise(p.name, p.type)} style={{ background: palette.accentSoft, color: palette.text, borderRadius: 999, padding: "6px 12px", fontSize: 12 }}>{p.name}</button>
+              ))}
+            </div>
+            <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+              <button onClick={() => setCustomType("strength")} style={{ flex: 1, background: customType === "strength" ? palette.strength : palette.accentSoft, color: customType === "strength" ? "#fff" : palette.muted, borderRadius: 8, padding: "8px 0", fontSize: 12, fontWeight: 500 }}>근력</button>
+              <button onClick={() => setCustomType("cardio")} style={{ flex: 1, background: customType === "cardio" ? palette.water : palette.accentSoft, color: customType === "cardio" ? "#fff" : palette.muted, borderRadius: 8, padding: "8px 0", fontSize: 12, fontWeight: 500 }}>유산소</button>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input value={customName} onChange={(e) => setCustomName(e.target.value)} placeholder="직접 입력" style={{ flex: 1, background: palette.accentSoft, color: palette.text, border: "none", borderRadius: 8, padding: "8px 12px", fontSize: 14 }} />
+              <button onClick={() => addExercise(customName, customType)} style={{ background: palette.strength, color: "#fff", borderRadius: 8, padding: "0 16px", fontSize: 14, fontWeight: 500 }}>추가</button>
+            </div>
+            <button onClick={() => setShowAdd(false)} style={{ width: "100%", marginTop: 12, background: "none", color: palette.muted, fontSize: 12 }}>닫기</button>
+          </div>
+        ) : (
+          <button onClick={() => setShowAdd(true)} style={{ width: "100%", padding: "14px 0", borderRadius: 16, fontSize: 14, fontWeight: 500, marginBottom: 16, background: "none", border: `1px dashed ${palette.cardBorder}`, color: palette.muted }}>+ 운동 추가</button>
+        )}
+
+        <div style={{ textAlign: "center", fontSize: 12, color: palette.muted, marginTop: 8 }}>
+          {saveState_ === "saved" ? "✓ 저장됨" : "자동 저장됨"}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
