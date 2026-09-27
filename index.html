@@ -38,6 +38,11 @@ const PRESETS = [
 
 function uid() { return Math.random().toString(36).slice(2, 9); }
 
+function todayStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 function autoResizeTextarea(el) {
   if (!el) return;
   el.style.height = "auto";
@@ -99,7 +104,7 @@ function App() {
   function addExercise(name, type) {
     if (!name.trim()) return;
     const newEx = {
-      id: uid(), name: name.trim(), type, note: "",
+      id: uid(), name: name.trim(), type, note: "", date: todayStr(),
       sets: [type === "cardio" ? { speed: "", incline: "", time: "" } : { weight: "", reps: "" }],
     };
     setExercises((list) => [...list, newEx]);
@@ -107,6 +112,9 @@ function App() {
     setCustomName("");
   }
   function removeExercise(id) { setExercises((list) => list.filter((ex) => ex.id !== id)); }
+  function updateDate(exId, value) {
+    setExercises((list) => list.map((ex) => (ex.id === exId ? { ...ex, date: value } : ex)));
+  }
   function updateNote(exId, value) {
     setExercises((list) => list.map((ex) => (ex.id === exId ? { ...ex, note: value } : ex)));
   }
@@ -130,11 +138,11 @@ function App() {
   function exportSnapshot() {
     setManageStatus("내보내는 중...");
     try {
-      const rows = [["운동", "유형", "세트", "무게(kg)/속도", "횟수/기울기", "시간(분)", "메모"]];
+      const rows = [["날짜", "운동", "유형", "세트", "무게(kg)/속도", "횟수/기울기", "시간(분)", "메모"]];
       exercises.forEach((ex) => {
         (ex.sets || []).forEach((s, i) => {
-          if (ex.type === "cardio") rows.push([ex.name, "유산소", i + 1, s.speed, s.incline, s.time, ex.note || ""]);
-          else rows.push([ex.name, "근력", i + 1, s.weight, s.reps, "", ex.note || ""]);
+          if (ex.type === "cardio") rows.push([ex.date || "", ex.name, "유산소", i + 1, s.speed, s.incline, s.time, ex.note || ""]);
+          else rows.push([ex.date || "", ex.name, "근력", i + 1, s.weight, s.reps, "", ex.note || ""]);
         });
       });
       const csv = rows.map((r) => r.map((v) => `"${String(v ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
@@ -191,6 +199,7 @@ function App() {
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <span style={{ color: palette.strength }}>🏋</span>
                 <span style={{ fontWeight: 600, fontSize: 16 }}>{ex.name}</span>
+                <input type="date" value={ex.date || ""} onChange={(e) => updateDate(ex.id, e.target.value)} style={{ background: palette.accentSoft, color: palette.muted, border: "none", borderRadius: 8, padding: "4px 8px", fontSize: 12, colorScheme: "dark" }} />
               </div>
               <button onClick={() => removeExercise(ex.id)} style={{ background: "none", color: palette.danger, fontSize: 12 }}>🗑 삭제</button>
             </div>
